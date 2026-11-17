@@ -1,0 +1,12 @@
+{
+  "enabled": true,
+  "dwell_ms": 450,
+  "dict_dir": "D:/Dicts/eudic",
+  "dicts": [],
+  "dict_labels": {},
+  "start_with_popup": false,
+  "show_tip_on_start": true,
+  "show_wordbook_on_start": true,
+  "auto_export": true,
+  "debug": false
+}

@@ -1,0 +1,24 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# --- runtime data (personal) ---
+data/
+exports/
+*.db
+hover.log
+show.request
+
+# --- PyInstaller output ---
+build/
+dist/
+*.manifest
+
+# --- editors / OS ---
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
