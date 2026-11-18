@@ -32,6 +32,8 @@ DEFAULT_CONFIG = {
     "show_wordbook_on_start": True,
     "export_dir": os.path.join(os.path.dirname(APP_DIR), "exports"),
     "auto_export": True,
+    # How long the popup survives after the cursor leaves the word (ms).
+    "hide_delay_ms": 250,
     "debug": False,
 }
 
@@ -91,7 +93,8 @@ class App:
         self.anchor_time = 0.0
         self.last_handled = None
         self.current_word = None
-        self._hide_at = 0.0
+        self.current_rect = None  # screen rect (physical px) of the word being shown
+        self._hide_at = None      # deadline set when the cursor leaves the word
         self._hotkey_latch = False
 
         self.timer = QTimer()
@@ -246,6 +249,7 @@ class App:
             return
         gx, gy = ocr_mod.cursor_pos()
         now = time.monotonic()
+        self._auto_hide_tick(gx, gy, now)
         if self.last_handled and (
             abs(gx - self.last_handled[0]) > 50 or abs(gy - self.last_handled[1]) > 50
         ):
@@ -257,8 +261,6 @@ class App:
         if self.anchor is None or abs(gx - self.anchor[0]) > 6 or abs(gy - self.anchor[1]) > 6:
             self.anchor = (gx, gy)
             self.anchor_time = now
-            if self._popup is not None and self._popup.isVisible() and self._far_from_popup(gx, gy):
-                self._maybe_hide()
             return
 
         if now - self.anchor_time < self.config["dwell_ms"] / 1000.0:
@@ -286,6 +288,44 @@ class App:
         except OSError:
             pass
 
+    def _auto_hide_tick(self, gx, gy, now):
+        """Hide the popup soon after the cursor leaves the word it belongs to.
+
+        Moving the cursor onto the popup itself keeps it open (so the entry can be
+        read or scrolled); moving anywhere else starts a short countdown.
+        """
+        if self._popup is None or not self._popup.isVisible():
+            self._hide_at = None
+            return
+        if self._cursor_on_word(gx, gy) or self._inside_popup(gx, gy):
+            self._hide_at = None
+            return
+        delay = self.config.get("hide_delay_ms", 250) / 1000.0
+        if self._hide_at is None:
+            self._hide_at = now + delay
+        elif now >= self._hide_at:
+            self._hide_at = None
+            self._maybe_hide()
+
+    def _cursor_on_word(self, gx, gy):
+        """Is the cursor still over the word whose entry is on screen?"""
+        r = self.current_rect
+        if not r:
+            return False
+        x, y, w, h = r
+        pad = 8
+        return (x - pad) <= gx <= (x + w + pad) and (y - pad) <= gy <= (y + h + pad)
+
+    def _inside_popup(self, gx, gy):
+        if self._popup is None or not self._popup.isVisible():
+            return False
+        d = self._dpr()
+        g = self._popup.geometry()
+        return (
+            g.left() * d <= gx <= (g.left() + g.width()) * d
+            and g.top() * d <= gy <= (g.top() + g.height()) * d
+        )
+
     def _warm_popup(self):
         """Build the WebEngine popup in the background so the first hover is instant."""
         try:
@@ -293,18 +333,12 @@ class App:
         except Exception as exc:
             self._log("error", where="warm-popup", error=repr(exc))
 
-    def _far_from_popup(self, gx, gy):
-        d = self._dpr()
-        g = self.popup.geometry()
-        lx, ly = gx / d, gy / d
-        dx = max(g.left() - lx, 0, lx - (g.left() + g.width()))
-        dy = max(g.top() - ly, 0, ly - (g.top() + g.height()))
-        return (dx * dx + dy * dy) ** 0.5 > 90
-
     def _maybe_hide(self):
         if self._popup is not None and self._popup.isVisible():
             self._popup.hide()
-            self.current_word = None
+        self.current_word = None
+        self.current_rect = None
+        self._hide_at = None
 
     def _log(self, kind, **kw):
         """Append a JSON line to data/hover.log (misses always, hits when debug)."""
@@ -341,10 +375,13 @@ class App:
             return
         if word == self.current_word and self.popup.isVisible():
             return
+        rect = getattr(self.ocr, "last_rect", None)
         is_new = self.book.add(word.lower(), d.label if d else "")
         total = self.book.count()
         status = "✓ 新收录" if is_new else "已在生词本"
         self.current_word = word
+        self.current_rect = rect
+        self._hide_at = None
         page = ui.build_page(d, word, html)
         self.popup.show_word(word, (d.label if d else ""), status, page, f"dict://{d.key}/")
         self.popup.place_near(*self._to_logical(gx, gy).toTuple())

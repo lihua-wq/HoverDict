@@ -76,6 +76,7 @@ class ScreenOcr:
         self._mss = mss.mss()
         self._max_side = 2600  # keep very wide crops from getting slow
         self.last_debug = None
+        self.last_rect = None
 
     def _grab(self, left, top, width, height):
         width = max(8, min(width, self._max_side))
@@ -141,6 +142,7 @@ class ScreenOcr:
     def word_at(self, x, y, tol=14):
         """Return the word under the cursor, or the closest one within tol px."""
         self.last_debug = {"x": x, "y": y, "tries": []}
+        self.last_rect = None
         attempts = [
             (200, 300, 44, 44, tol),
             (260, 380, 60, 60, tol + 6),
@@ -160,6 +162,11 @@ class ScreenOcr:
                     return None
                 continue
             if dist <= t:
-                self.last_debug["picked"] = word
-                return is_acceptable(word)
+                word = is_acceptable(word)
+                if word:
+                    # remember where that word sits on screen (physical px), so the
+                    # caller can tell when the cursor has left it
+                    self.last_rect = rect
+                    self.last_debug["picked"] = word
+                return word
         return None

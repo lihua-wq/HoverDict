@@ -19,6 +19,7 @@ from PySide6.QtWebEngineCore import (
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QCheckBox,
     QFileDialog,
     QFrame,
@@ -340,6 +341,9 @@ class WordbookWindow(QWidget):
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._table_menu)
+        self.table.setToolTip("右键单词可以单独删除；也可以选中后用 Delete 键")
         self.table.setStyleSheet("QTableWidget{border:1px solid #d8dee4;border-radius:8px;}"
                                  "QHeaderView::section{background:#f6f8fa;border:none;padding:6px;}")
         lay.addWidget(self.table, 1)
@@ -430,6 +434,42 @@ class WordbookWindow(QWidget):
             word = self.table.item(r, 0).text()
             self.book.remove(word)
         self.reload()
+
+    def delete_word(self, word):
+        """Remove one word (right-click / Delete key)."""
+        if not word:
+            return
+        self.book.remove(word)
+        self.reload()
+
+    def _table_menu(self, pos):
+        row = self.table.rowAt(pos.y())
+        if row < 0:
+            return
+        item = self.table.item(row, 0)
+        if item is None:
+            return
+        word = item.text()
+        self.table.selectRow(row)
+        menu = QMenu(self)
+        act_del = menu.addAction("删除这个单词")
+        act_copy = menu.addAction("复制单词")
+        menu.addSeparator()
+        act_del_all = menu.addAction("删除选中的全部")
+        chosen = menu.exec(self.table.viewport().mapToGlobal(pos))
+        if chosen is act_del:
+            self.delete_word(word)
+        elif chosen is act_copy:
+            QApplication.clipboard().setText(word)
+        elif chosen is act_del_all:
+            self.delete_selected()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Delete and self.table.hasFocus():
+            self.delete_selected()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     # ---------- exporting ----------
     def _default_dir(self):
